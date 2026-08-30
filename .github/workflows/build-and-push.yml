@@ -1,86 +1,91 @@
-name: Build & Security Scan Pipeline
+name: Build and Push Docker Image
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
+# Allow GitHub Actions to authenticate with AWS using OIDC
 permissions:
   id-token: write
   contents: read
 
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: octabyte-staging-app
+
 jobs:
-  build-and-scan:
-    name: Build Docker Image, Trivy Scan & Push to ECR
+  build:
+    name: Build, Scan and Push
     runs-on: ubuntu-latest
 
-    outputs:
-      image_tag: ${{ steps.build-image.outputs.image_tag }}
-      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
-
     steps:
-      - name: Checkout Code
+
+      # Get the source code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js Environment
+      # Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: './app/package-lock.json'
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
 
-      - name: Install Dependencies & Run Tests
-        working-directory: ./app
+      # Install dependencies and run tests
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Run tests
+        working-directory: app
+        run: npm test
+
+      # Build Docker image
+      - name: Build Docker image
         run: |
-          npm ci
-          npm test
+          docker build \
+            -t octabyte-app:${{ github.sha }} \
+            ./app
 
-      - name: Build Docker Image
-        id: build-local
-        working-directory: ./app
-        run: |
-          docker build -t octabyte-app:${{ github.sha }} .
-
-      - name: Run Trivy Vulnerability Scanner on Container Image
+      # Scan Docker image for vulnerabilities
+      - name: Scan Docker image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'octabyte-app:${{ github.sha }}'
-          format: 'table'
-          exit-code: '0'
+          image-ref: octabyte-app:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
           ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
+          exit-code: 0
 
-      - name: Configure AWS Credentials via OIDC
+      # Connect GitHub Actions to AWS
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
-          audience: sts.amazonaws.com
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
-        id: login-ecr
+      # Check AWS account
+      - name: Check AWS connection
+        run: aws sts get-caller-identity
+
+      # Login to Amazon ECR
+      - name: Login to ECR
+        id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Tag and Push Image to ECR
-        id: build-image
+      # Push Docker image to ECR
+      - name: Push image to ECR
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: octabyte-staging-app
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker tag octabyte-app:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker tag octabyte-app:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          docker tag \
+            octabyte-app:$IMAGE_TAG \
+            $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Send Slack Notification on Failure
-        if: failure()
-        uses: slackapi/slack-github-action@v1.25.0
-        with:
-          payload: |
-            {
-              "text": "❌ *Build & Push Pipeline Failed!* \nCommit: ${{ github.sha }}\nBranch: main\nAuthor: ${{ github.actor }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          docker push \
+            $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+          echo "Docker image pushed successfully"
