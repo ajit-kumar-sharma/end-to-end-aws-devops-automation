@@ -9,10 +9,6 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  AWS_REGION: us-east-1
-  ECR_REPOSITORY: octabyte-staging-app
-
 jobs:
   build-and-push:
     name: Build, Scan and Push
@@ -20,11 +16,11 @@ jobs:
 
     steps:
 
-      # 1. Checkout source code
+      # 1. Get the source code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
+      # 2. Install Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -32,12 +28,12 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
 
-      # 3. Install dependencies
+      # 3. Install application dependencies
       - name: Install dependencies
         working-directory: app
         run: npm ci
 
-      # 4. Run tests
+      # 4. Run application tests
       - name: Run tests
         working-directory: app
         run: npm test
@@ -46,11 +42,9 @@ jobs:
       - name: Build Docker image
         working-directory: app
         run: |
-          docker build \
-            -t octabyte-app:${{ github.sha }} \
-            .
+          docker build -t octabyte-app:${{ github.sha }} .
 
-      # 6. Scan Docker image
+      # 6. Scan Docker image for vulnerabilities
       - name: Scan Docker image
         uses: aquasecurity/trivy-action@master
         with:
@@ -61,34 +55,42 @@ jobs:
           vuln-type: os,library
           severity: CRITICAL,HIGH
 
-      # 7. Configure AWS using GitHub OIDC
+      # 7. Show GitHub repository information
+      - name: Show GitHub OIDC information
+        run: |
+          echo "Repository: ${{ github.repository }}"
+          echo "Repository ID: ${{ github.repository_id }}"
+          echo "Owner: ${{ github.repository_owner }}"
+          echo "Owner ID: ${{ github.repository_owner_id }}"
+          echo "Branch: ${{ github.ref_name }}"
+
+      # 8. Configure AWS using GitHub OIDC
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
+          audience: sts.amazonaws.com
 
-      # 8. Verify AWS connection
+      # 9. Check AWS connection
       - name: Check AWS identity
         run: |
           aws sts get-caller-identity
 
-      # 9. Login to Amazon ECR
+      # 10. Login to Amazon ECR
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 10. Push Docker image to ECR
+      # 11. Push Docker image to ECR
       - name: Push Docker image
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: octabyte-staging-app
           IMAGE_TAG: ${{ github.sha }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          docker tag \
-            octabyte-app:${IMAGE_TAG} \
-            ${REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+          docker tag octabyte-app:${IMAGE_TAG} \
+            ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
 
           docker push \
-            ${REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
-
-          echo "Docker image pushed successfully!"
+            ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
