@@ -9,7 +9,7 @@ permissions:
   id-token: write
   contents: read
 
-jobs:
+jobs: 
   build-and-push:
     name: Build, Scan and Push
     runs-on: ubuntu-latest
