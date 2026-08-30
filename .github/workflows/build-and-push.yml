@@ -5,35 +5,26 @@ on:
     branches:
       - main
 
-# Allow GitHub Actions to authenticate with AWS using OIDC
 permissions:
   id-token: write
   contents: read
 
-env:
-  AWS_REGION: ap-south-1
-  ECR_REPOSITORY: octabyte-staging-app
-
 jobs:
-  build:
+  build-and-push:
     name: Build, Scan and Push
     runs-on: ubuntu-latest
 
     steps:
-
-      # Get the source code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Install Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "20"
           cache: npm
           cache-dependency-path: app/package-lock.json
 
-      # Install dependencies and run tests
       - name: Install dependencies
         working-directory: app
         run: npm ci
@@ -42,50 +33,41 @@ jobs:
         working-directory: app
         run: npm test
 
-      # Build Docker image
       - name: Build Docker image
+        working-directory: app
         run: |
-          docker build \
-            -t octabyte-app:${{ github.sha }} \
-            ./app
+          docker build -t octabyte-app:${{ github.sha }} .
 
-      # Scan Docker image for vulnerabilities
       - name: Scan Docker image
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: octabyte-app:${{ github.sha }}
           format: table
-          severity: CRITICAL,HIGH
+          exit-code: "0"
           ignore-unfixed: true
-          exit-code: 0
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
 
-      # Connect GitHub Actions to AWS
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
-      # Check AWS account
-      - name: Check AWS connection
-        run: aws sts get-caller-identity
+      - name: Check AWS identity
+        run: |
+          aws sts get-caller-identity
 
-      # Login to Amazon ECR
-      - name: Login to ECR
-        id: ecr
+      - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Push Docker image to ECR
-      - name: Push image to ECR
+      - name: Push Docker image
         env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: octabyte-staging-app
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker tag \
-            octabyte-app:$IMAGE_TAG \
-            $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag octabyte-app:${IMAGE_TAG} \
+            ${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}
 
           docker push \
-            $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-          echo "Docker image pushed successfully"
+            ${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}
