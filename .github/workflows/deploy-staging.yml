@@ -1,0 +1,64 @@
+name: Deploy to Staging Environment
+
+on:
+  workflow_run:
+    workflows: ["Build & Security Scan Pipeline"]
+    types:
+      - completed
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging ECS Fargate
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+          audience: sts.amazonaws.com
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Download Task Definition & Update Container Image Tag
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: octabyte-staging-app
+          IMAGE_TAG: ${{ github.sha }}
+          CLUSTER_NAME: octabyte-staging-cluster
+          SERVICE_NAME: octabyte-staging-service
+        run: |
+          aws ecs describe-task-definition --task-definition octabyte-staging-task --query taskDefinition > task-def.json
+          cat task-def.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > clean-task-def.json
+          jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE' clean-task-def.json > updated-task-def.json
+
+      - name: Deploy Task Definition to Staging ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: updated-task-def.json
+          service: octabyte-staging-service
+          cluster: octabyte-staging-cluster
+          wait-for-service-stability: true
+
+      - name: Send Slack Notification on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "❌ *Staging ECS Deployment Failed!* \nCommit: ${{ github.sha }}\nService: octabyte-staging-service\nAuthor: ${{ github.actor }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

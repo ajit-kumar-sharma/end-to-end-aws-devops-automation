@@ -1,0 +1,42 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 3,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Database Query Execution Duration (Seconds)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(db_query_duration_seconds_sum[1m]) / rate(db_query_duration_seconds_count[1m])",
+          "legendFormat": "Avg Query Duration (s)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Database Connection Pool & Active Query Count",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(db_query_duration_seconds_count[1m]))",
+          "legendFormat": "Queries per Second",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["database", "postgresql", "rds"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "3. RDS PostgreSQL & Database Performance Dashboard",
+  "uid": "database-overview-dashboard"
+}

@@ -1,0 +1,68 @@
+name: Pull Request Verification Pipeline
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  pr-checks:
+    name: Code Tests, Security Audit & Terraform Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './app/package-lock.json'
+
+      - name: Install Dependencies
+        working-directory: ./app
+        run: npm ci
+
+      - name: Run Unit Tests
+        working-directory: ./app
+        run: npm run test:unit
+
+      - name: Run Integration Tests
+        working-directory: ./app
+        run: npm run test:integration
+
+      - name: Dependency Security Audit
+        working-directory: ./app
+        run: npm audit --audit-level=high --production || true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Validate Staging Terraform
+        run: |
+          cd terraform/environments/staging
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate Production Terraform
+        run: |
+          cd terraform/environments/production
+          terraform init -backend=false
+          terraform validate
+
+      - name: Send Slack Notification on Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "❌ *PR Check Pipeline Failed!* \nPR: #${{ github.event.number }}\nBranch: ${{ github.head_ref }}\nAuthor: ${{ github.actor }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

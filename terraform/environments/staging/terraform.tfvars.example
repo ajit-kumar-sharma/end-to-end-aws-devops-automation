@@ -1,0 +1,13 @@
+aws_region         = "us-east-1"
+environment        = "staging"
+vpc_cidr           = "10.0.0.0/16"
+container_port     = 3000
+container_cpu      = "256"
+container_memory   = "512"
+ecs_desired_count  = 1
+db_name            = "octabyte_staging_db"
+db_username        = "octabyte_admin"
+db_password        = "YourSecureStagingPassword123!"
+db_instance_class  = "db.t4g.micro"
+db_allocated_storage = 20
+backup_retention_period = 7

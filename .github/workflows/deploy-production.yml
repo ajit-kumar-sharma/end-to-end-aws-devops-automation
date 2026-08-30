@@ -1,0 +1,76 @@
+name: Deploy to Production Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Git SHA / Release Version Tag to deploy'
+        required: true
+        default: 'latest'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  production-deployment:
+    name: Production Deployment (Manual Approval Required)
+    runs-on: ubuntu-latest
+    environment: production # Enforces GitHub Actions Manual Approval Gate
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+          audience: sts.amazonaws.com
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and Promote Image to Production ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          STAGING_REPO: octabyte-staging-app
+          PROD_REPO: octabyte-production-app
+          RELEASE_TAG: ${{ github.event.inputs.release_version }}
+        run: |
+          docker pull $ECR_REGISTRY/$STAGING_REPO:$RELEASE_TAG
+          docker tag $ECR_REGISTRY/$STAGING_REPO:$RELEASE_TAG $ECR_REGISTRY/$PROD_REPO:$RELEASE_TAG
+          docker tag $ECR_REGISTRY/$STAGING_REPO:$RELEASE_TAG $ECR_REGISTRY/$PROD_REPO:latest
+          docker push $ECR_REGISTRY/$PROD_REPO:$RELEASE_TAG
+          docker push $ECR_REGISTRY/$PROD_REPO:latest
+
+      - name: Download Production Task Definition & Update Container Image Tag
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          PROD_REPO: octabyte-production-app
+          RELEASE_TAG: ${{ github.event.inputs.release_version }}
+        run: |
+          aws ecs describe-task-definition --task-definition octabyte-production-task --query taskDefinition > prod-task-def.json
+          cat prod-task-def.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > clean-prod-task-def.json
+          jq --arg IMAGE "$ECR_REGISTRY/$PROD_REPO:$RELEASE_TAG" '.containerDefinitions[0].image = $IMAGE' clean-prod-task-def.json > updated-prod-task-def.json
+
+      - name: Deploy Task Definition to Production ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: updated-prod-task-def.json
+          service: octabyte-production-service
+          cluster: octabyte-production-cluster
+          wait-for-service-stability: true
+
+      - name: Send Slack Deployment Notification
+        if: always()
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "🚀 *Production Deployment Finished!* \nStatus: ${{ job.status }}\nRelease Version: ${{ github.event.inputs.release_version }}\nTriggered By: ${{ github.actor }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

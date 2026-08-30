@@ -1,0 +1,24 @@
+{
+  "name": "octabyte-app",
+  "version": "1.0.0",
+  "description": "OctaByte Production-Grade Node.js Microservice with PostgreSQL and Prometheus Metrics",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest --detectOpenHandles --forceExit",
+    "test:unit": "jest test/app.test.js --detectOpenHandles --forceExit",
+    "test:integration": "jest test/integration.test.js --detectOpenHandles --forceExit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pg": "^8.11.5",
+    "prom-client": "^15.1.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.0",
+    "supertest": "^6.3.4"
+  }
+}

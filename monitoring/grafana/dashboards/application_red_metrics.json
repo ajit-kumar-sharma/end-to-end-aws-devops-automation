@@ -1,0 +1,64 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 2,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Rate — HTTP Request Throughput (req/sec)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[1m])) by (method, route, code)",
+          "legendFormat": "{{method}} {{route}} ({{code}})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Errors — 4xx & 5xx HTTP Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{code=~\"5..\"}[1m]))",
+          "legendFormat": "5xx Server Errors",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(http_requests_total{code=~\"4..\"}[1m]))",
+          "legendFormat": "4xx Client Errors",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Duration — P95 & P99 HTTP Request Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "P95 Latency (s)",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "P99 Latency (s)",
+          "refId": "B"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["application", "red-metrics", "latency", "errors"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "2. Application RED Metrics Dashboard",
+  "uid": "app-red-metrics-dashboard"
+}

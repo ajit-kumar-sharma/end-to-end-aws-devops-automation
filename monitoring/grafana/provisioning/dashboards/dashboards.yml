@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: '8Byte DevOps Dashboards'
+    orgId: 1
+    folder: '8Byte Operations'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,14 @@
+aws_region         = "us-east-1"
+environment        = "production"
+vpc_cidr           = "10.1.0.0/16"
+container_port     = 3000
+container_cpu      = "512"
+container_memory   = "1024"
+ecs_desired_count  = 2
+db_name            = "octabyte_prod_db"
+db_username        = "octabyte_admin"
+db_password        = "YourUltraSecureProductionPassword456!"
+db_instance_class  = "db.t4g.small"
+db_allocated_storage = 20
+deletion_protection  = false
+backup_retention_period = 14
